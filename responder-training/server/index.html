@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Beacon // Live Response Training</title>
+  <meta name="theme-color" content="#123d42">
+  <meta name="description" content="Beacon live response training and incident coordination workspace">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="styles.css">
+  <style>.unit-dispatch{border-top:1px solid var(--line);padding:14px 0 13px}.dispatch-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:9px}.dispatch-title label,.dispatch-title span,.dispatch-fields label{font-size:8px;letter-spacing:1px;font-weight:700;color:var(--muted)}.dispatch-title span{color:var(--teal)}.unit-types{display:grid;grid-template-columns:repeat(5,1fr);gap:3px}.unit-type{border:1px solid var(--line);background:#fafcf9;color:var(--muted);padding:7px 2px 6px;font-size:8px;font-weight:700;cursor:pointer}.unit-type span{display:block;color:var(--teal);font-size:14px;height:16px;margin-bottom:3px}.unit-type.selected{border-color:var(--teal);background:#eaf5f1;color:var(--teal)}.dispatch-fields{display:grid;grid-template-columns:1.6fr 1fr;gap:6px;margin:10px 0}.dispatch-fields select{display:block;width:100%;border:1px solid var(--line);background:white;color:var(--ink);padding:7px 4px;margin-top:4px;font:10px 'DM Sans'}.assign-button{width:100%;border:0;background:var(--coral);color:white;padding:9px;font-size:10px;font-weight:700;cursor:pointer}.assign-button:hover{background:#d65f4e}.vehicle-pin span{display:grid;place-items:center;width:22px;height:22px;border:2px solid white;border-radius:50%;color:white;font-size:10px;font-weight:700;box-shadow:0 2px 7px #263b3a66}.location-modal{position:fixed;z-index:1000;inset:0;background:#102f31aa;display:grid;place-items:center}.location-form{background:white;width:min(390px,calc(100% - 32px));padding:22px;box-shadow:0 12px 35px #102f3155}.location-form h2{font:600 23px 'Barlow Condensed';margin:5px 0 15px}.location-form label{display:block;color:var(--muted);font-size:9px;font-weight:700;letter-spacing:1px;margin-top:11px}.location-form input,.location-form select{width:100%;border:1px solid var(--line);padding:9px;margin-top:5px;font:11px 'DM Sans'}.location-form-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:17px}.location-form-actions button{border:0;padding:9px 13px;font-weight:700;cursor:pointer}.location-cancel{background:#eef2ef;color:var(--muted)}.location-save{background:var(--teal);color:white}</style>
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">✦</span><span>BEACON</span><small>FIELD TRAINING NETWORK</small></div>
+      <div class="exercise-status"><span class="live-dot"></span><span>LIVE EXERCISE</span><strong id="clock">14:32:08</strong></div>
+      <div class="top-actions"><button class="icon-button" title="Toggle sound" id="soundBtn">◖</button><button class="avatar">JM</button></div>
+    </header>
+
+    <section class="scenario-bar">
+      <div><span class="eyebrow">ACTIVE SCENARIO</span><h1>LOUISIANA // MAJOR DISASTER</h1></div>
+      <div class="scenario-meta"><span><b class="signal">●</b> 18 units connected</span><span>Last sync <strong id="syncTime">12 sec ago</strong></span><button class="outline-button" id="recenterBtn">⌖ Recenter</button></div>
+    </section>
+
+    <section class="workspace">
+      <aside class="left-panel">
+        <div class="panel-heading"><div><span class="eyebrow">OPERATIONS</span><h2>Incident queue <span id="incidentCount">04</span></h2></div><button class="plus-button" id="addIncidentBtn" title="Add incident">+</button></div>
+        <div class="role-switch" role="group" aria-label="View as"><button class="active" data-role="instructor">Instructor</button><button data-role="student">Student</button></div>
+        <div class="queue" id="incidentList"></div>
+        <div class="briefing-card"><span class="eyebrow">INSTRUCTOR BRIEF</span><p>Move teams through the flood corridor. Keep the east shelter below 80% capacity.</p><div class="briefing-footer"><span class="avatar small">JM</span><span>Jules Morgan<br><small>Lead instructor</small></span><span class="status-tag">BRIEFED</span></div></div>
+      </aside>
+
+      <section class="map-panel"><div id="map"></div><div class="map-overlay top-left"><span class="map-label"><span class="live-dot"></span> LIVE MAP</span><span class="map-label muted">SIMULATION TIME 14:32</span></div><div class="map-overlay bottom-left"><button class="map-tool active" title="Layers">▦</button><button class="map-tool" title="Measure">⌁</button><button class="map-tool" title="Locate me" id="locateBtn">⌖</button></div><div class="map-legend"><span><i class="legend-dot critical"></i> Critical</span><span><i class="legend-dot active-mark"></i> Active</span><span><i class="legend-dot resource"></i> Resources</span></div></section>
+
+      <aside class="right-panel"><div class="panel-heading"><div><span class="eyebrow">TEAM CHANNEL</span><h2>Live coordination</h2></div><span class="online-count"><i></i> 06</span></div><div class="channel-tabs"><button class="active">All activity</button><button>Dispatches</button></div><div class="activity" id="activityFeed"><article class="activity-item"><span class="activity-avatar teal">OR</span><div><p><strong>Ops Room</strong> posted a situation update</p><small>14:31:42 · All teams</small><div class="activity-note">Water level rising on Pine St. Route units via 3rd Ave.</div></div></article><article class="activity-item"><span class="activity-avatar coral">SK</span><div><p><strong>Sam Kim</strong> accepted a dispatch</p><small>14:29:18 · Medic 04</small></div></article><article class="activity-item"><span class="activity-avatar yellow">TN</span><div><p><strong>Taylor N.</strong> marked Shelter East</p><small>14:27:06 · Capacity 64%</small></div></article></div><div class="dispatch-box"><label for="dispatchInput">SEND TO ALL TEAMS</label><textarea id="dispatchInput" rows="3" placeholder="Write a dispatch or update..."></textarea><div class="dispatch-actions"><span>⌘ Enter to send</span><button class="send-button" id="sendBtn">Send dispatch <span>↗</span></button></div></div></aside>
+    </section>
+    <footer class="footer"><span>BEACON TRAINING OS <b>v2.4.1</b></span><span><i class="secure-dot"></i> Encrypted exercise channel</span><span>Scenario ends in <strong id="countdown">01:27:52</strong></span></footer>
+  </main>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
+    }
+  </script>
+</body>
+</html>
