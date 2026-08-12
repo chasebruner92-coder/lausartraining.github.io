@@ -41,6 +41,7 @@
       <button class="tool-button" data-quick-add="road-block">Road Block</button>
       <button class="tool-button" data-quick-add="power-line">Power Line Down</button>
       <button class="tool-button" data-quick-add="flood">Flood Area</button>
+      <button class="tool-button" data-grid-toggle="toggle">Grid Pencil</button>
       <button class="tool-button" data-quick-add="fire">Fire / Smoke</button>
       <button class="tool-button" data-quick-add="medical">Medical Site</button>
       <button class="tool-button" data-quick-add="evac">Evac Route</button>
@@ -143,12 +144,40 @@
               <div class="point-item"><strong>FOB</strong><span id="fobLocation">Bridge Access</span></div>
             </div>
           </div>
+
+          <div class="command-points" id="incidentStageEditor">
+            <div class="panel-heading compact"><div><span class="eyebrow">INCIDENT STAGE</span><h4>Worsen / Improve</h4></div></div>
+            <label class="field-label">Current stage
+              <select id="incidentStageSelect">
+                <option value="ACTIVE">Active</option>
+                <option value="MONITOR">Monitor</option>
+                <option value="CRITICAL">Critical</option>
+                <option value="RESOLVED">Resolved</option>
+              </select>
+            </label>
+            <div class="button-row">
+              <button class="outline-button" id="applyIncidentStageBtn" type="button">Apply stage</button>
+            </div>
+          </div>
+
+          <div class="command-points" id="mapOverlayEditor">
+            <div class="panel-heading compact"><div><span class="eyebrow">MAP OVERLAYS</span><h4>Flood / grid tools</h4></div></div>
+            <label class="field-label">Grid name
+              <input id="gridNameInput" type="text" placeholder="Ex: North access lane">
+            </label>
+            <div class="button-row">
+              <button class="outline-button" id="toggleGridBtn" type="button">Pencil grid</button>
+              <button class="outline-button" id="saveGridBtn" type="button">Save grid</button>
+              <button class="outline-button" id="shrinkFloodBtn" type="button">Flood −</button>
+              <button class="outline-button" id="growFloodBtn" type="button">Flood +</button>
+            </div>
+          </div>
         </div>
       </aside>
 
       <section class="map-panel"><div id="map"></div><div class="map-overlay top-left"><span class="map-label"><span class="live-dot"></span> LIVE MAP</span><span class="map-label muted">SIMULATION TIME 14:32</span></div><div class="map-overlay bottom-left"><button class="map-tool active" title="Layers">â–¦</button><button class="map-tool" title="Measure">âŒ</button><button class="map-tool" title="Locate me" id="locateBtn">âŒ–</button></div><div class="map-legend"><span><i class="legend-dot critical"></i> Critical</span><span><i class="legend-dot active-mark"></i> Active</span><span><i class="legend-dot resource"></i> Resources</span></div></section>
 
-      <aside class="right-panel"><div class="panel-heading"><div><span class="eyebrow">TEAM CHANNEL</span><h2>Live coordination</h2></div><span class="online-count"><i></i> 06</span></div><div class="channel-tabs"><button class="active">All activity</button><button>Dispatches</button></div><div class="activity" id="activityFeed"><article class="activity-item"><span class="activity-avatar teal">OR</span><div><p><strong>Ops Room</strong> posted a situation update</p><small>14:31:42 Â· All teams</small><div class="activity-note">Water level rising on Pine St. Route units via 3rd Ave.</div></div></article><article class="activity-item"><span class="activity-avatar coral">SK</span><div><p><strong>Sam Kim</strong> accepted a dispatch</p><small>14:29:18 Â· Medic 04</small></div></article><article class="activity-item"><span class="activity-avatar yellow">TN</span><div><p><strong>Taylor N.</strong> marked Shelter East</p><small>14:27:06 Â· Capacity 64%</small></div></article></div><div class="dispatch-box"><label for="dispatchTemplate">QUICK DISPATCH</label><select id="dispatchTemplate"><option value="">Select a template</option><option>All units maintain current position and await further instructions.</option><option>Proceed to the shelter staging area and stand by for assignment.</option><option>Report in now with current crew status and equipment readiness.</option><option>Medical team report to casualties collection point immediately.</option></select><label for="dispatchInput">SEND TO ALL TEAMS</label><textarea id="dispatchInput" rows="3" placeholder="Write a dispatch or update..."></textarea><div class="dispatch-actions"><span>âŒ˜ Enter to send</span><button class="send-button" id="sendBtn">Send dispatch <span>â†—</span></button></div></div></aside>
+      <aside class="right-panel"><div class="panel-heading"><div><span class="eyebrow">TEAM CHANNEL</span><h2>Live coordination</h2></div><span class="online-count"><i></i> 06</span></div><div class="channel-tabs"><button class="active">All activity</button><button>Dispatches</button></div><div class="activity" id="activityFeed"><article class="activity-item"><span class="activity-avatar teal">OR</span><div><p><strong>Ops Room</strong> posted a situation update</p><small>14:31:42 Â· All teams</small><div class="activity-note">Water level rising on Pine St. Route units via 3rd Ave.</div></div></article><article class="activity-item"><span class="activity-avatar coral">SK</span><div><p><strong>Sam Kim</strong> accepted a dispatch</p><small>14:29:18 Â· Medic 04</small></div></article><article class="activity-item"><span class="activity-avatar yellow">TN</span><div><p><strong>Taylor N.</strong> marked Shelter East</p><small>14:27:06 Â· Capacity 64%</small></div></article></div><div class="dispatch-box"><label for="dispatchTemplate">QUICK DISPATCH</label><select id="dispatchTemplate"><option value="">Select a template</option><option>All units maintain current position and await further instructions.</option><option>Proceed to the shelter staging area and stand by for assignment.</option><option>Report in now with current crew status and equipment readiness.</option><option>Medical team report to casualties collection point immediately.</option></select><label for="dispatchInput">SEND TO ALL TEAMS</label><textarea id="dispatchInput" rows="3" placeholder="Write a dispatch or update..."></textarea><div class="dispatch-actions"><span>âŒ˜ Enter to send</span><button class="send-button" id="sendBtn">Send dispatch <span>â†—</span></button></div><div class="student-dispatch-box"><label for="studentUnitSelect">ASSIGN UNIT</label><select id="studentUnitSelect"></select><label for="studentIncidentSelect">TARGET CALL</label><select id="studentIncidentSelect"></select><label for="busSizeSelect">BUS TYPE</label><select id="busSizeSelect"><option value="Mini">Mini bus (10)</option><option value="Shuttle" selected>Shuttle bus (20)</option><option value="Transit">Transit bus (35)</option><option value="Coach">Coach bus (55)</option></select><label for="passengerCountInput">PEOPLE ON BOARD</label><input id="passengerCountInput" type="number" min="0" max="20" value="12" /><div class="dispatch-actions"><button class="send-button" id="studentAssignBtn">Send to call</button><button class="outline-button" id="returnUnitBtn" type="button">Return unit</button></div></div></div></aside>
     </section>
     <footer class="footer"><span>BEACON TRAINING OS <b>v2.4.1</b></span><span><i class="secure-dot"></i> Encrypted exercise channel</span><span>Scenario ends in <strong id="countdown">01:27:52</strong></span></footer>
   </main>

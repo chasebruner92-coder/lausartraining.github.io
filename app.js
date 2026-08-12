@@ -1,4 +1,11 @@
-﻿const quickAddCatalog = {
+﻿const busCapacityMap = {
+  Mini: 10,
+  Shuttle: 20,
+  Transit: 35,
+  Coach: 55
+};
+
+const quickAddCatalog = {
   unit: { kind: 'unit', label: 'Add Unit', idPrefix: 'UNIT', type: 'Support', station: 'HQ Command' },
   volunteer: { kind: 'volunteer', label: 'Add Volunteer', idPrefix: 'VOL', type: 'Volunteer', station: 'Shelter East' },
   shelter: { kind: 'incident', label: 'Shelter', idPrefix: 'SHEL', type: 'shelter', title: 'Shelter Open', detail: 'Shelter opened for displaced residents.', status: 'MONITOR' },
@@ -85,6 +92,9 @@ let scenarioName = scenarioPresets.louisiana.title;
 let activeUnitEditId = null;
 let callsEnabled = true;
 let callQueue = [];
+let gridDrawMode = false;
+let activeGridLine = null;
+let gridSegments = [];
 
 const defaultCommandPoints = {
   BOO: { label: 'HQ Command', coords: [30.451, -91.180] },
@@ -97,6 +107,79 @@ const feed = document.querySelector('#activityFeed');
 const markers = {};
 const vehicleMarkers = {};
 const commandPointMarkers = {};
+const incidentOverlays = {};
+
+function isFloodIncident(incident) {
+  if (!incident) return false;
+  const summary = `${incident.title || ''} ${incident.detail || ''}`.toLowerCase();
+  return summary.includes('flood') || summary.includes('water rise') || summary.includes('flooded');
+}
+
+function buildFloodShape(coords, radiusLat = 0.006, radiusLng = 0.01) {
+  const [lat, lng] = coords;
+  return [
+    [lat + radiusLat, lng],
+    [lat + radiusLat * 0.55, lng + radiusLng],
+    [lat, lng + radiusLng * 1.4],
+    [lat - radiusLat * 0.7, lng + radiusLng * 1.1],
+    [lat - radiusLat, lng],
+    [lat - radiusLat * 0.5, lng - radiusLng * 1.2],
+    [lat + radiusLat * 0.35, lng - radiusLng * 1.1]
+  ];
+}
+
+function getActiveFloodIncident() {
+  const selectedId = document.querySelector('.incident.selected')?.dataset.id;
+  if (selectedId) {
+    const selected = incidents.find((incident) => incident.id === selectedId);
+    if (selected && isFloodIncident(selected)) return selected;
+  }
+  return incidents.find((incident) => isFloodIncident(incident)) || null;
+}
+
+function completeGridDraw() {
+  if (!activeGridLine) return;
+
+  const latlngs = activeGridLine.getLatLngs();
+  if (!Array.isArray(latlngs) || latlngs.length < 2) {
+    activeGridLine.remove();
+    activeGridLine = null;
+    return;
+  }
+
+  const name = document.querySelector('#gridNameInput')?.value.trim() || 'Grid route';
+  activeGridLine.setStyle({ color: '#123d42', weight: 3, opacity: 0.9, dashArray: '8 8' });
+  activeGridLine.bindPopup(`<strong>${name}</strong>`, { autoPan: false });
+  gridSegments.push({ name, latlngs: [...latlngs] });
+  activeGridLine = null;
+}
+
+function toggleMapGrid() {
+  gridDrawMode = !gridDrawMode;
+  const mapContainer = document.querySelector('#map');
+  if (mapContainer) {
+    mapContainer.style.cursor = gridDrawMode ? 'crosshair' : '';
+  }
+  addActivity('Grid drawing', gridDrawMode ? 'Click and drag on the map to draw a route. Add a name in the field first.' : 'Grid drawing mode off.');
+}
+
+function adjustFloodSize(delta) {
+  const incident = getActiveFloodIncident();
+  if (!incident || !isFloodIncident(incident)) return;
+
+  const current = Number(incident.floodRadius || 0.006);
+  const next = Math.min(0.02, Math.max(0.0025, current + delta));
+  incident.floodRadius = Number(next.toFixed(4));
+
+  if (incidentOverlays[incident.id]) {
+    const floodLayer = incidentOverlays[incident.id];
+    floodLayer.setLatLngs(buildFloodShape(incident.coords, incident.floodRadius, incident.floodRadius * 1.65));
+  }
+
+  renderIncidents();
+  persistScenarioState();
+  addActivity('Flood zone updated', `${incident.id} flood area ${delta > 0 ? 'expanded' : 'reduced'} to ${incident.floodRadius.toFixed(4)} lat units.`);
+}
 
 function handleQuickAdd(action) {
   const preset = quickAddCatalog[action];
@@ -253,9 +336,40 @@ function initCallFeed() {
     if (!callsEnabled) return;
     const [label, summary, code] = templates[Math.floor(Math.random() * templates.length)];
     add911Call(label, summary, code);
-  }, 12000);
+  }, 45000);
 
   renderCallFeed();
+}
+
+function getVehicleBusCapacity(vehicle) {
+  if (!vehicle) return 0;
+  const busType = vehicle.busType || 'Shuttle';
+  return busCapacityMap[busType] || busCapacityMap.Shuttle;
+}
+
+function updateStudentDispatchControls() {
+  const unitSelect = document.querySelector('#studentUnitSelect');
+  const incidentSelect = document.querySelector('#studentIncidentSelect');
+  const passengerInput = document.querySelector('#passengerCountInput');
+  const busSelect = document.querySelector('#busSizeSelect');
+  if (!unitSelect || !incidentSelect || !passengerInput || !busSelect) return;
+
+  const activeUnits = vehicles.filter((vehicle) => vehicle.id && !vehicle.id.toLowerCase().includes('vol'));
+  const unitOptions = activeUnits.length ? activeUnits : vehicles;
+  unitSelect.innerHTML = unitOptions.map((vehicle) => `
+    <option value="${vehicle.id}">${vehicle.id}${vehicle.assignedIncidentId ? ' · dispatched' : ''}</option>
+  `).join('') || '<option value="">No units available</option>';
+
+  incidentSelect.innerHTML = incidents.map((incident) => `<option value="${incident.id}">${incident.title}</option>`).join('') || '<option value="">No incidents</option>';
+
+  const selectedUnit = unitOptions.find((vehicle) => vehicle.id === unitSelect.value) || unitOptions[0];
+  if (selectedUnit) {
+    const capacity = getVehicleBusCapacity(selectedUnit);
+    const currentBus = selectedUnit.busType || 'Shuttle';
+    busSelect.value = currentBus;
+    passengerInput.value = Math.min(String(selectedUnit.passengers || Math.min(12, capacity)), String(capacity));
+    passengerInput.max = String(capacity);
+  }
 }
 
 function renderUnitList() {
@@ -266,7 +380,7 @@ function renderUnitList() {
     <div class="unit-item" data-unit-id="${vehicle.id}">
       <div>
         <strong>${vehicle.id}</strong>
-        <small>${vehicle.type} · ${vehicle.position ? vehicle.position.join(', ') : 'stationed'}</small>
+        <small>${vehicle.type} · ${vehicle.assignedIncidentId ? `Dispatch: ${vehicle.assignedIncidentId} · ${vehicle.busType || 'Shuttle'} bus` : vehicle.position ? vehicle.position.join(', ') : 'stationed'}</small>
       </div>
       <div class="unit-item-actions">
         <button type="button" data-edit-unit="${vehicle.id}">Edit</button>
@@ -410,6 +524,8 @@ function renderIncidents() {
 
   Object.values(markers).forEach((marker) => marker.remove());
   Object.keys(markers).forEach((key) => delete markers[key]);
+  Object.values(incidentOverlays).forEach((layer) => layer.remove());
+  Object.keys(incidentOverlays).forEach((key) => delete incidentOverlays[key]);
 
   list.innerHTML = incidents.map((incident, index) => `
     <article class="incident ${incident.type} ${index === 0 ? 'selected' : ''}" data-id="${incident.id}">
@@ -421,15 +537,42 @@ function renderIncidents() {
       <p>${incident.type === 'shelter' ? `Capacity ${Math.round((incident.people / incident.capacity) * 100)}% · ${incident.people} people` : incident.detail}</p>
       ${incident.type === 'shelter' ? `<div class="location-row"><span>${incident.address || 'Map location'}</span></div>` : ''}
       <div class="incident-actions">
+        <button type="button" class="resolve-incident" data-incident-id="${incident.id}">${incident.status === 'RESOLVED' ? 'Reopen' : 'Resolve'}</button>
         <button type="button" class="remove-incident" data-incident-id="${incident.id}">Delete</button>
       </div>
     </article>
   `).join('');
 
   incidents.forEach((incident) => {
-    const marker = L.marker(incident.coords).addTo(map);
+    const marker = L.marker(incident.coords, { draggable: true }).addTo(map);
     marker.bindPopup(`<strong>${incident.id}</strong><br>${incident.title}<br><small>${incident.detail}${incident.address ? `<br>${incident.address}` : ''}</small>`, { autoPan: false });
+    marker.on('dragend', () => {
+      const latLng = marker.getLatLng();
+      incident.coords = [latLng.lat, latLng.lng];
+
+      if (incidentOverlays[incident.id]) {
+        const floodRadius = Number(incident.floodRadius || 0.006);
+        const nextShape = buildFloodShape(incident.coords, floodRadius, floodRadius * 1.65);
+        incidentOverlays[incident.id].setLatLngs(nextShape);
+      }
+
+      persistScenarioState();
+      addActivity('Incident moved', `${incident.id} was repositioned on the map.`);
+    });
     markers[incident.id] = marker;
+
+    if (isFloodIncident(incident)) {
+      const floodRadius = Number(incident.floodRadius || 0.006);
+      const floodLayer = L.polygon(buildFloodShape(incident.coords, floodRadius, floodRadius * 1.65), {
+        color: '#3fa9ff',
+        fillColor: '#5ec4ff',
+        fillOpacity: 0.28,
+        weight: 2,
+        opacity: 0.8
+      }).addTo(map);
+      floodLayer.bindPopup(`<strong>${incident.id}</strong><br>${incident.title}<br><small>Flooded zone shown for student briefing.</small>`, { autoPan: false });
+      incidentOverlays[incident.id] = floodLayer;
+    }
   });
 
   list.querySelectorAll('.incident').forEach((card) => {
@@ -445,8 +588,33 @@ function renderIncidents() {
     });
   });
 
+  list.querySelectorAll('.resolve-incident').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const id = button.dataset.incidentId;
+      const incident = incidents.find((item) => item.id === id);
+      if (!incident) return;
+
+      if (incident.status === 'RESOLVED') {
+        incident.status = incident.lastStatus || 'ACTIVE';
+        addActivity('Incident reopened', `${id} was returned to the active queue.`);
+      } else {
+        incident.lastStatus = incident.status || 'ACTIVE';
+        incident.status = 'RESOLVED';
+        addActivity('Incident resolved', `${id} was marked resolved.`);
+      }
+
+      renderIncidents();
+      updateOperationsBoard();
+      persistScenarioState();
+      const incidentCount = document.querySelector('#incidentCount');
+      if (incidentCount) incidentCount.textContent = String(incidents.length).padStart(2, '0');
+    });
+  });
+
   list.querySelectorAll('.remove-incident').forEach((button) => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
       const id = button.dataset.incidentId;
       incidents = incidents.filter((incident) => incident.id !== id);
       renderIncidents();
@@ -556,10 +724,54 @@ function initScenarioControls() {
   const unitNameInput = document.querySelector('#unitNameInput');
   const unitStationSelect = document.querySelector('#unitStationSelect');
   const scenarioNameInput = document.querySelector('#scenarioNameInput');
+  const incidentStageSelect = document.querySelector('#incidentStageSelect');
+  const applyIncidentStageBtn = document.querySelector('#applyIncidentStageBtn');
+  const toggleGridBtn = document.querySelector('#toggleGridBtn');
+  const saveGridBtn = document.querySelector('#saveGridBtn');
+  const shrinkFloodBtn = document.querySelector('#shrinkFloodBtn');
+  const growFloodBtn = document.querySelector('#growFloodBtn');
+  const rapidGridBtn = document.querySelector('[data-grid-toggle="toggle"]');
 
   if (scenarioNameInput) {
     scenarioNameInput.addEventListener('input', applyScenarioName);
   }
+
+  if (applyIncidentStageBtn && incidentStageSelect) {
+    applyIncidentStageBtn.addEventListener('click', () => {
+      const selected = document.querySelector('.incident.selected');
+      if (!selected) return;
+      const id = selected.dataset.id;
+      const incident = incidents.find((item) => item.id === id);
+      if (!incident) return;
+
+      incident.lastStatus = incident.status || 'ACTIVE';
+      incident.status = incidentStageSelect.value;
+      if (incident.status === 'RESOLVED' && incident.lastStatus === 'RESOLVED') {
+        incident.status = 'ACTIVE';
+      }
+
+      renderIncidents();
+      updateOperationsBoard();
+      persistScenarioState();
+      addActivity('Incident stage', `${incident.id} moved to ${incident.status}.`);
+    });
+  }
+
+  if (toggleGridBtn) toggleGridBtn.addEventListener('click', toggleMapGrid);
+  if (rapidGridBtn) rapidGridBtn.addEventListener('click', toggleMapGrid);
+  if (saveGridBtn) {
+    saveGridBtn.addEventListener('click', () => {
+      if (activeGridLine) {
+        completeGridDraw();
+      }
+      addActivity('Grid saved', 'The current grid line has been saved to the map.');
+      gridDrawMode = false;
+      const mapContainer = document.querySelector('#map');
+      if (mapContainer) mapContainer.style.cursor = '';
+    });
+  }
+  if (shrinkFloodBtn) shrinkFloodBtn.addEventListener('click', () => adjustFloodSize(-0.0015));
+  if (growFloodBtn) growFloodBtn.addEventListener('click', () => adjustFloodSize(0.0015));
 
   if (addScenarioIncidentBtn && incidentNameInput) {
     addScenarioIncidentBtn.addEventListener('click', () => {
@@ -626,6 +838,76 @@ function initScenarioControls() {
       unitStationSelect.value = 'HQ Command';
     });
   }
+
+  const studentUnitSelect = document.querySelector('#studentUnitSelect');
+  const studentIncidentSelect = document.querySelector('#studentIncidentSelect');
+  const busSizeSelect = document.querySelector('#busSizeSelect');
+  const passengerCountInput = document.querySelector('#passengerCountInput');
+  const studentAssignBtn = document.querySelector('#studentAssignBtn');
+  const returnUnitBtn = document.querySelector('#returnUnitBtn');
+
+  if (studentAssignBtn && studentUnitSelect && studentIncidentSelect && busSizeSelect && passengerCountInput) {
+    studentAssignBtn.addEventListener('click', () => {
+      const unit = vehicles.find((item) => item.id === studentUnitSelect.value);
+      const incident = incidents.find((item) => item.id === studentIncidentSelect.value);
+      if (!unit || !incident) return;
+
+      const busType = busSizeSelect.value;
+      const maxCapacity = busCapacityMap[busType] || 20;
+      const passengers = Math.min(Math.max(Number(passengerCountInput.value) || 0, 0), maxCapacity);
+      unit.busType = busType;
+      unit.passengers = passengers;
+      unit.assignedIncidentId = incident.id;
+      unit.status = 'Dispatched';
+      unit.position = [...incident.coords];
+      unit.route = [unit.position, [incident.coords[0] + 0.002, incident.coords[1]], [incident.coords[0] + 0.004, incident.coords[1]]];
+      unit.step = 0;
+      renderUnitList();
+      renderVehicleMarkers();
+      updateStudentDispatchControls();
+      persistScenarioState();
+      addActivity('Student dispatch', `${unit.id} sent to ${incident.title} with ${passengers} passengers on a ${busType} bus.`);
+    });
+  }
+
+  if (returnUnitBtn && studentUnitSelect) {
+    returnUnitBtn.addEventListener('click', () => {
+      const unit = vehicles.find((item) => item.id === studentUnitSelect.value);
+      if (!unit) return;
+
+      unit.assignedIncidentId = null;
+      unit.status = 'Available';
+      unit.position = [30.451, -91.180];
+      unit.route = [[30.451, -91.180], [30.452, -91.178], [30.454, -91.176]];
+      unit.step = 0;
+      unit.passengers = 0;
+      renderUnitList();
+      renderVehicleMarkers();
+      updateStudentDispatchControls();
+      persistScenarioState();
+      addActivity('Unit return', `${unit.id} returned to base and is available again.`);
+    });
+  }
+
+  if (studentUnitSelect) {
+    studentUnitSelect.addEventListener('change', updateStudentDispatchControls);
+  }
+
+  if (busSizeSelect) {
+    busSizeSelect.addEventListener('change', () => {
+      const selectedUnit = vehicles.find((vehicle) => vehicle.id === studentUnitSelect?.value);
+      const capacity = busCapacityMap[busSizeSelect.value] || 20;
+      if (passengerCountInput) {
+        passengerCountInput.max = String(capacity);
+        if (Number(passengerCountInput.value) > capacity) passengerCountInput.value = String(capacity);
+      }
+      if (selectedUnit) {
+        selectedUnit.busType = busSizeSelect.value;
+      }
+    });
+  }
+
+  updateStudentDispatchControls();
 
   if (!scenarioBtn || !modal || !cancelBtn || !applyBtn || !scenarioSelect) return;
 
@@ -696,6 +978,33 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '&copy; OpenStreetMap contributors'
 }).addTo(map);
 
+map.on('mousedown', (event) => {
+  if (!gridDrawMode) return;
+  if (activeGridLine) return;
+
+  const name = document.querySelector('#gridNameInput')?.value.trim() || 'Grid route';
+  activeGridLine = L.polyline([event.latlng, event.latlng], {
+    color: '#123d42',
+    weight: 3,
+    opacity: 0.9,
+    dashArray: '8 8'
+  }).addTo(map);
+  activeGridLine.bindPopup(`<strong>${name}</strong>`, { autoPan: false });
+});
+
+map.on('mousemove', (event) => {
+  if (!gridDrawMode || !activeGridLine) return;
+  const points = activeGridLine.getLatLngs();
+  if (!points || points.length === 0) return;
+  const current = points[0];
+  activeGridLine.setLatLngs([current, event.latlng]);
+});
+
+map.on('mouseup', () => {
+  if (!gridDrawMode) return;
+  completeGridDraw();
+});
+
 if (document.querySelector('#addIncidentBtn')) {
   document.querySelector('#addIncidentBtn').addEventListener('click', () => {
     const id = `SITE-${String(incidents.length + 1).padStart(3, '0')}`;
@@ -721,6 +1030,10 @@ if (document.querySelector('#locateBtn')) {
 
 if (loadSavedScenarioState()) {
   scenarioName = document.querySelector('#scenarioNameInput')?.value || scenarioName;
+}
+
+if (document.querySelector('[data-grid-toggle="toggle"]')) {
+  document.querySelector('[data-grid-toggle="toggle"]').dataset.gridToggle = 'toggle';
 }
 
 renderIncidents();
