@@ -461,12 +461,41 @@ function renderUnitList() {
   });
 }
 
+function getScenarioCenter() {
+  if (incidents.length) {
+    const total = incidents.reduce((acc, incident) => {
+      const [lat, lng] = incident.coords || [0, 0];
+      acc.lat += lat;
+      acc.lng += lng;
+      return acc;
+    }, { lat: 0, lng: 0 });
+
+    return [total.lat / incidents.length, total.lng / incidents.length];
+  }
+
+  return [39.5, -98.35];
+}
+
+function syncReviewSummary() {
+  const reviewScenarioName = document.querySelector('#reviewScenarioName');
+  const reviewIncidentCount = document.querySelector('#reviewIncidentCount');
+  const reviewUnitsCount = document.querySelector('#reviewUnitsCount');
+  const reviewMode = document.querySelector('#reviewMode');
+
+  if (reviewScenarioName) reviewScenarioName.textContent = scenarioName;
+  if (reviewIncidentCount) reviewIncidentCount.textContent = String(incidents.length).padStart(2, '0');
+  if (reviewUnitsCount) reviewUnitsCount.textContent = String(vehicles.length).padStart(2, '0');
+  if (reviewMode) reviewMode.textContent = document.body.dataset.role === 'student' ? 'Student' : 'Instructor';
+}
+
 function applyScenarioName() {
   const scenarioTitle = document.querySelector('#scenarioTitle');
   const scenarioInput = document.querySelector('#scenarioNameInput');
   if (scenarioTitle && scenarioInput) {
-    scenarioTitle.textContent = scenarioInput.value.trim() || scenarioName;
-    scenarioName = scenarioTitle.textContent.trim() || scenarioName;
+    const nextName = scenarioInput.value.trim() || scenarioName;
+    scenarioTitle.textContent = nextName;
+    scenarioName = nextName;
+    syncReviewSummary();
     persistScenarioState();
   }
 }
@@ -541,9 +570,10 @@ function initViewTabs() {
       viewTabs.forEach((item) => item.classList.toggle('active', item === tab));
       const requestedView = tab.dataset.view;
       const isBoardView = requestedView === 'operations' || requestedView === 'command';
+      const isMapView = requestedView === 'map' || requestedView === 'tools';
 
       if (commandBoard) commandBoard.hidden = !isBoardView;
-      if (mapWorkspace) mapWorkspace.hidden = isBoardView;
+      if (mapWorkspace) mapWorkspace.hidden = !isMapView;
     });
   });
 }
@@ -558,6 +588,7 @@ function initRoleSwitch() {
     if (briefingCard) briefingCard.hidden = isStudent;
     if (scenarioDesigner) scenarioDesigner.hidden = isStudent;
     document.body.dataset.role = role;
+    syncReviewSummary();
   };
 
   roleButtons.forEach((button) => {
@@ -771,6 +802,7 @@ function initScenarioControls() {
   const cancelBtn = document.querySelector('#cancelScenarioBtn');
   const applyBtn = document.querySelector('#applyScenarioBtn');
   const scenarioSelect = document.querySelector('#scenarioSelect');
+  const renameScenarioBtn = document.querySelector('#renameScenarioBtn');
   const addScenarioIncidentBtn = document.querySelector('#addScenarioIncidentBtn');
   const saveUnitBtn = document.querySelector('#saveUnitBtn');
   const clearUnitBtn = document.querySelector('#clearUnitBtn');
@@ -788,6 +820,15 @@ function initScenarioControls() {
 
   if (scenarioNameInput) {
     scenarioNameInput.addEventListener('input', applyScenarioName);
+  }
+
+  if (renameScenarioBtn && scenarioNameInput) {
+    renameScenarioBtn.addEventListener('click', () => {
+      const nextName = scenarioNameInput.value.trim();
+      if (!nextName) return;
+      applyScenarioName();
+      addActivity('Scenario renamed', `${nextName} is now the active exercise title.`);
+    });
   }
 
   if (applyIncidentStageBtn && incidentStageSelect) {
@@ -1040,7 +1081,7 @@ function initClock() {
   }
 }
 
-const map = L.map('map', { zoomControl: false }).setView([30.451, -91.180], 14);
+const map = L.map('map', { zoomControl: false }).setView([39.5, -98.35], 5);
 L.control.zoom({ position: 'bottomright' }).addTo(map);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '&copy; OpenStreetMap contributors'
@@ -1085,7 +1126,7 @@ if (document.querySelector('#addIncidentBtn')) {
 }
 
 if (document.querySelector('#recenterBtn')) {
-  document.querySelector('#recenterBtn').addEventListener('click', () => map.flyTo([30.451, -91.180], 14, { duration: 0.6 }));
+  document.querySelector('#recenterBtn').addEventListener('click', () => map.flyTo(getScenarioCenter(), 5, { duration: 0.6 }));
 }
 
 if (document.querySelector('#locateBtn')) {
