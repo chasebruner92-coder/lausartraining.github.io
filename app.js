@@ -106,8 +106,42 @@ const list = document.querySelector('#incidentList');
 const feed = document.querySelector('#activityFeed');
 const markers = {};
 const vehicleMarkers = {};
+const vehicleRouteLayers = {};
 const commandPointMarkers = {};
 const incidentOverlays = {};
+
+function buildRoutePath(startCoords, endCoords, useWater = false) {
+  const steps = 6;
+  const path = [];
+
+  for (let step = 0; step <= steps; step += 1) {
+    const t = step / steps;
+    const lat = startCoords[0] + (endCoords[0] - startCoords[0]) * t + (useWater ? Math.sin(t * Math.PI) * 0.0025 : 0);
+    const lng = startCoords[1] + (endCoords[1] - startCoords[1]) * t + (useWater ? Math.cos(t * Math.PI) * 0.0035 : 0);
+    path.push([lat, lng]);
+  }
+
+  return path;
+}
+
+function renderVehicleRoutes() {
+  Object.values(vehicleRouteLayers).forEach((routeLine) => routeLine.remove());
+  Object.keys(vehicleRouteLayers).forEach((key) => delete vehicleRouteLayers[key]);
+
+  vehicles.forEach((vehicle) => {
+    if (!Array.isArray(vehicle.route) || vehicle.route.length < 2) return;
+
+    const isWaterRoute = /swift|water|coastal|harbor|evac/i.test(vehicle.type || vehicle.id || '');
+    const routeLine = L.polyline(vehicle.route, {
+      color: isWaterRoute ? '#4cc3ff' : '#d76959',
+      weight: 3,
+      opacity: 0.8,
+      dashArray: '8 8'
+    }).addTo(map);
+
+    vehicleRouteLayers[vehicle.id] = routeLine;
+  });
+}
 
 function isFloodIncident(incident) {
   if (!incident) return false;
@@ -372,6 +406,17 @@ function updateStudentDispatchControls() {
   }
 }
 
+function syncDestinationCapacity(incidentId, delta) {
+  if (!incidentId) return;
+
+  const incident = incidents.find((item) => item.id === incidentId);
+  if (!incident || !incident.capacity) return;
+
+  const current = Number(incident.people || 0);
+  const nextValue = Math.max(0, Math.min(incident.capacity, current + Number(delta || 0)));
+  incident.people = nextValue;
+}
+
 function renderUnitList() {
   const unitList = document.querySelector('#unitList');
   if (!unitList) return;
@@ -494,10 +539,11 @@ function initViewTabs() {
   viewTabs.forEach((tab) => {
     tab.addEventListener('click', () => {
       viewTabs.forEach((item) => item.classList.toggle('active', item === tab));
-      const isCommandView = tab.dataset.view === 'command';
+      const requestedView = tab.dataset.view;
+      const isBoardView = requestedView === 'operations' || requestedView === 'command';
 
-      if (commandBoard) commandBoard.hidden = !isCommandView;
-      if (mapWorkspace) mapWorkspace.hidden = isCommandView;
+      if (commandBoard) commandBoard.hidden = !isBoardView;
+      if (mapWorkspace) mapWorkspace.hidden = isBoardView;
     });
   });
 }
@@ -505,18 +551,23 @@ function initViewTabs() {
 function initRoleSwitch() {
   const roleButtons = document.querySelectorAll('[data-role]');
   const briefingCard = document.querySelector('.briefing-card');
+  const scenarioDesigner = document.querySelector('#scenarioDesigner');
+
+  const applyRoleState = (role) => {
+    const isStudent = role === 'student';
+    if (briefingCard) briefingCard.hidden = isStudent;
+    if (scenarioDesigner) scenarioDesigner.hidden = isStudent;
+    document.body.dataset.role = role;
+  };
 
   roleButtons.forEach((button) => {
     button.addEventListener('click', () => {
       roleButtons.forEach((item) => item.classList.toggle('active', item === button));
-      const role = button.dataset.role;
-      document.body.dataset.role = role;
-
-      if (briefingCard) {
-        briefingCard.hidden = role === 'student';
-      }
+      applyRoleState(button.dataset.role);
     });
   });
+
+  applyRoleState('instructor');
 }
 
 function renderIncidents() {
@@ -643,6 +694,8 @@ function renderVehicleMarkers() {
     marker.bindPopup(`<strong>${vehicle.id}</strong><br>${vehicle.type}`, { autoPan: false });
     vehicleMarkers[vehicle.id] = marker;
   });
+
+  renderVehicleRoutes();
 }
 
 function renderCommandPointMarkers() {
@@ -703,6 +756,7 @@ function tickVehicleMovement() {
     }
   });
 
+  renderVehicleRoutes();
   updateOperationsBoard();
 }
 
@@ -855,13 +909,20 @@ function initScenarioControls() {
       const busType = busSizeSelect.value;
       const maxCapacity = busCapacityMap[busType] || 20;
       const passengers = Math.min(Math.max(Number(passengerCountInput.value) || 0, 0), maxCapacity);
+      if (unit.assignedIncidentId && unit.assignedIncidentId !== incident.id) {
+        syncDestinationCapacity(unit.assignedIncidentId, -Number(unit.passengers || 0));
+      }
+
       unit.busType = busType;
       unit.passengers = passengers;
       unit.assignedIncidentId = incident.id;
       unit.status = 'Dispatched';
-      unit.position = [...incident.coords];
-      unit.route = [unit.position, [incident.coords[0] + 0.002, incident.coords[1]], [incident.coords[0] + 0.004, incident.coords[1]]];
+      const startCoords = Array.isArray(unit.position) && unit.position.length === 2 ? unit.position : [30.451, -91.180];
+      const useWaterRoute = /swift|water|coastal|harbor|evac/i.test(unit.type || unit.id || '');
+      unit.position = [...startCoords];
+      unit.route = buildRoutePath(startCoords, incident.coords, useWaterRoute);
       unit.step = 0;
+      syncDestinationCapacity(incident.id, passengers);
       renderUnitList();
       renderVehicleMarkers();
       updateStudentDispatchControls();
@@ -875,10 +936,17 @@ function initScenarioControls() {
       const unit = vehicles.find((item) => item.id === studentUnitSelect.value);
       if (!unit) return;
 
+      if (unit.assignedIncidentId) {
+        syncDestinationCapacity(unit.assignedIncidentId, -Number(unit.passengers || 0));
+      }
+
       unit.assignedIncidentId = null;
       unit.status = 'Available';
-      unit.position = [30.451, -91.180];
-      unit.route = [[30.451, -91.180], [30.452, -91.178], [30.454, -91.176]];
+      const startCoords = Array.isArray(unit.position) && unit.position.length === 2 ? unit.position : [30.451, -91.180];
+      const baseCoords = [30.451, -91.180];
+      const useWaterRoute = /swift|water|coastal|harbor|evac/i.test(unit.type || unit.id || '');
+      unit.position = [...startCoords];
+      unit.route = buildRoutePath(startCoords, baseCoords, useWaterRoute);
       unit.step = 0;
       unit.passengers = 0;
       renderUnitList();
