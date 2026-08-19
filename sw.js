@@ -1,11 +1,12 @@
-const CACHE_NAME = 'beacon-training-v1';
+const CACHE_NAME = 'beacon-training-v2';
 const APP_FILES = [
   './',
   './index.html',
   './styles.css',
   './app.js',
   './manifest.webmanifest',
-  './icon.svg'
+  './icon.svg',
+  './alerts/index.html'
 ];
 
 self.addEventListener('install', (event) => {
@@ -14,7 +15,11 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    caches.keys().then((keys) => Promise.all(
+      keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
+    )).then(() => self.clients.claim())
+  );
 });
 
 self.addEventListener('fetch', (event) => {
